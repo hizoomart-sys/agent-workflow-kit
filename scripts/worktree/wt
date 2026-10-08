@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# wt — изолированные worktree для параллельных Claude-сессий.
+#
+#   wt start [--launch] [--repo <path>] [-- <claude args>]
+#                          создать worktree и ветку сессии, напечатать путь
+#                          (--launch: после этого запустить в нём `claude`)
+#   wt status [--repo <path>]
+#   wt merge [SID] [--dry-run] [--push] [--cleanup-only] [--force] [--repo <path>]
+#   wt doctor [--gc] [--repo <path>]     диагностика / обратимая уборка веток
+#
+# Конфиг: <repo>/.claude/workflow-kit.json (enabled должен быть true).
+# SID сессии берётся из CLAUDE_CODE_SESSION_ID (первые 8 символов).
+
+set -euo pipefail
+
+_SELF="${BASH_SOURCE[0]}"
+if [ -L "$_SELF" ]; then
+    _SELF="$(readlink "$_SELF")"
+    [[ "$_SELF" == /* ]] || _SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$_SELF"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+# shellcheck source=wt-lib.sh
+source "$SCRIPT_DIR/wt-lib.sh"
+
+usage() {
+    cat <<'USAGE'
+wt — worktree для параллельных Claude-сессий
+
+  wt start [--launch] [--repo <path>] [-- <claude args>]
+                                     создать worktree сессии и напечатать путь
+  wt status [--repo <path>]          сессионные ветки и их состояние
+  wt merge [SID] [--dry-run] [--push] [--cleanup-only] [--force] [--repo <path>]
+                                     влить ветку в base (--no-ff), убрать worktree и ветку
+  wt doctor [--gc] [--repo <path>]   диагностика / обратимая уборка веток
+
+Конфиг: <repo>/.claude/workflow-kit.json
+USAGE
+}
+
+CMD="${1:-help}"
+[ $# -gt 0 ] && shift
+
+REPO_ARG=
+GC_FLAG=
+SID_ARG=
+LAUNCH=false
+M_DRY=false; M_PUSH=false; M_CLEANUP=false; M_FORCE=false
+EXTRA_ARGS=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --repo)         REPO_ARG="${2:-}"; shift 2 ;;
+        --gc)           GC_FLAG="--gc"; shift ;;
+        --launch)       LAUNCH=true; shift ;;
+        --dry-run)      M_DRY=true; shift ;;
+        --push)         M_PUSH=true; shift ;;
+        --cleanup-only) M_CLEANUP=true; shift ;;
+        --force)        M_FORCE=true; shift ;;
+        --help|-h)      usage; exit 0 ;;
+        --)             shift; EXTRA_ARGS+=("$@"); break ;;
+        -*)             EXTRA_ARGS+=("$1"); shift ;;
+        *)
+            if [ "$CMD" = "merge" ] && [ -z "$SID_ARG" ]; then
+                SID_ARG="$1"
+            else
+                EXTRA_ARGS+=("$1")
+            fi
+            shift ;;
+    esac
+done
+
+case "$CMD" in
+    help|--help|-h) usage; exit 0 ;;
+    start|status|merge|doctor) ;;
+    *) echo "wt: неизвестная команда '$CMD'" >&2; usage >&2; exit 2 ;;
+esac
+
+REPO_ROOT="$(wt_find_repo_root "${REPO_ARG:-$PWD}" 2>/dev/null)" || {
+    echo "wt: не найден git-репозиторий (${REPO_ARG:-$PWD})" >&2
+    exit 1
+}
+wt_load_config "$REPO_ROOT"
+
+case "$CMD" in
+    start)
+        OUT="$(wt_start "$REPO_ROOT")" || exit 1
+        printf '%s\n' "$OUT"
+        WT_PATH="$(printf '%s\n' "$OUT" | sed -n 's/^WORKTREE_PATH=//p')"
+        if $LAUNCH; then
+            cd "$WT_PATH"
+            exec claude ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+        fi
+        echo "Работай из этого каталога: cd \"$WT_PATH\" и абсолютные пути файлов внутри него."
+        ;;
+
+    status)
+        if [ "$WT_ENABLED" != "true" ]; then
+            echo "wt status: модуль выключен (enabled:false в .claude/workflow-kit.json)."
+            exit 0
+        fi
+        BRANCHES="$(wt_list_branches "$REPO_ROOT" "$WT_PREFIX")"
+        if [ -z "$BRANCHES" ]; then
+            echo "Сессионных веток нет ($REPO_ROOT)"
+            exit 0
+        fi
+        printf "%-32s  %-24s  %4s  %s\n" "Ветка" "Состояние" "Дни" "Действие"
+        while IFS= read -r branch; do
+            [ -z "$branch" ] && continue
+            git -C "$REPO_ROOT" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null || continue
+            state="$(wt_classify_branch "$REPO_ROOT" "$branch" "$WT_BASE")"
+            age="$(wt_branch_age_days "$REPO_ROOT" "$branch")d"
+            wt_path="$(wt_find_worktree_path "$REPO_ROOT" "$branch")"
+            dirty=""
+            if [ -n "$wt_path" ] && [ -d "$wt_path" ]; then
+                n="$(wt_dirty_files "$wt_path" | wc -l | tr -d ' ')"
+                [ "$n" -gt 0 ] && dirty=" (${n}M)"
+            fi
+            case "$state" in
+                ACTIVE_DIRTY)  action="продолжить / закоммитить" ;;
+                ACTIVE_CLEAN)  action="wt merge" ;;
+                ACTIVE_EMPTY)  action="живая, пусто" ;;
+                HAS_UNIQUE)    action="wt merge / inspect" ;;
+                *_SAFE)        action="wt doctor --gc" ;;
+                *)             action="inspect" ;;
+            esac
+            printf "%-32s  %-24s  %4s  %s\n" "$branch" "${state}${dirty}" "$age" "$action"
+        done <<EOF
+$BRANCHES
+EOF
+        ;;
+
+    merge)
+        if [ "$WT_ENABLED" != "true" ]; then
+            echo "wt merge: модуль выключен (enabled:false в .claude/workflow-kit.json)." >&2
+            exit 1
+        fi
+        export WT_M_DRY=$M_DRY WT_M_PUSH=$M_PUSH WT_M_CLEANUP=$M_CLEANUP WT_M_FORCE=$M_FORCE
+        wt_merge "$REPO_ROOT" "$WT_BASE" "$WT_PREFIX" "$SID_ARG"
+        ;;
+
+    doctor)
+        exec bash "$SCRIPT_DIR/wt-doctor.sh" ${GC_FLAG:+"$GC_FLAG"} --repo "$REPO_ROOT" \
+            ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+        ;;
+esac

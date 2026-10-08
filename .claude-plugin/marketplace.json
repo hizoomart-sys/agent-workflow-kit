@@ -1,0 +1,15 @@
+{
+  "name": "agent-workflow-kit",
+  "description": "Session persistence, parallel git worktrees and safety guards for Claude Code.",
+  "owner": {
+    "name": "hizoomart-sys",
+    "url": "https://github.com/hizoomart-sys"
+  },
+  "plugins": [
+    {
+      "name": "agent-workflow-kit",
+      "source": ".",
+      "description": "Сессии через /clear, параллельные ветки, барьеры на ошибки агента."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "agent-workflow-kit",
+  "displayName": "Agent Workflow Kit",
+  "description": "Сессии, которые переживают /clear, параллельная работа в отдельных ветках и барьеры, которые блокируют ошибки агента, а не просят их не делать.",
+  "version": "0.2.0",
+  "author": {
+    "name": "hizoomart-sys",
+    "url": "https://github.com/hizoomart-sys"
+  },
+  "homepage": "https://github.com/hizoomart-sys/agent-workflow-kit",
+  "repository": "https://github.com/hizoomart-sys/agent-workflow-kit",
+  "license": "MIT",
+  "keywords": ["claude-code", "session-persistence", "git-worktree", "agent-safety", "hooks", "guards", "multi-agent-workflow"]
+}

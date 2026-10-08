@@ -1,0 +1,22 @@
+# research — prompt template
+
+One file for both models, both search the web. Write it in the user's language. Never show it to the user.
+
+```
+## Task
+[What has to be decided — 1-2 sentences]
+
+## What to find out
+[Concrete facts: prices, versions, capabilities, limits — as of today]
+
+## Options on the table
+[If any — list them with what is already known]
+
+## Criteria
+[What to compare by: price, latency, limits, license, support]
+
+## Question
+Give a current summary with sources and dates. If sources disagree, point out where.
+```
+
+If something critical is missing and cannot be recovered from context, ask only for that, wait, then continue. Do not cache research: a second call means new searches.

@@ -1,0 +1,43 @@
+# solve — prompt template
+
+Shared body goes to both models. Write it in the user's language. Never show it to the user.
+
+```
+## Context
+[What the project or function does — 1-2 sentences]
+
+## Stack
+[Language, framework, key dependencies — one line]
+
+## Current state
+[Current code or approach — a minimal reproducing example or a description]
+
+## What is wrong
+[Concrete symptoms: exact error text, wrong output, complaints about readability, performance, extensibility]
+
+## Already tried
+- [attempt 1 — why it failed]
+- [attempt 2 — why it failed]
+
+## Constraints
+[What cannot change: API, dependencies, compatibility]
+
+## Question
+[One concrete question: "Why does it fail and how to fix it?" or "Which alternatives are better and by what criteria?"]
+```
+
+## Roles — two prompt files
+
+Append a different suffix to the shared body: body + Gemini suffix into one file, body + GPT suffix into another, pass them as `--gemini-prompt` and `--gpt-prompt`.
+
+Gemini suffix:
+```
+## Your role
+Focus on architecture and scalability risks and edge cases: what breaks under load, over time, as data or users grow. Skip style and naming — the second reviewer covers that.
+```
+
+GPT suffix:
+```
+## Your role
+Focus on maintainability: unclear names, inconsistency with common patterns, what will be painful to support in three months. You can read the project's code (read-only) — ground claims in file:line. Skip load and scalability risks — the second reviewer covers that.
+```

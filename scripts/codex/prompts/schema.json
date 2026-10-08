@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "How sure the agent is of the result"
+    },
+    "go_allowed": {
+      "type": "string",
+      "enum": ["yes", "no", "n/a"],
+      "description": "GO/NO-GO verdict, n/a when the mode makes no shipping decision"
+    },
+    "analysis": {
+      "type": "string",
+      "description": "The full answer in markdown: findings, reasoning, recommendations"
+    }
+  },
+  "required": ["confidence", "go_allowed", "analysis"],
+  "additionalProperties": false
+}
